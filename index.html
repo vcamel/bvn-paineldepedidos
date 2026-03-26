@@ -174,22 +174,6 @@ button{font-family:'Plus Jakarta Sans',sans-serif}
     </div>
   </div>
 
-  <!-- CSV/XLSX usuários drop zone -->
-  <div class="drop-csv" id="drop-csv"
-    ondragover="event.preventDefault();this.classList.add('drag')"
-    ondragleave="this.classList.remove('drag')"
-    ondrop="event.preventDefault();this.classList.remove('drag');if(event.dataTransfer.files[0]){onCsvChange({target:{files:event.dataTransfer.files}});}">
-    <input id="inp-csv" type="file" accept=".csv,.xlsx,.xls" style="display:none" onchange="onCsvChange(event)"/>
-    <div id="csv-icon" style="font-size:22px">👤</div>
-    <div style="flex:1;text-align:left">
-      <div id="csv-name" style="font-size:12px;font-weight:700;color:#475569">Usuários · CSV ou XLSX de Negociação (opcional)</div>
-      <div id="csv-sub" style="font-size:11px;color:#334155;margin-top:1px">Arraste aqui ou
-        <span onclick="document.getElementById('inp-csv').click()" style="color:#60a5fa;cursor:pointer;text-decoration:underline">clique para selecionar</span>
-      </div>
-    </div>
-    <div id="csv-remove" style="display:none;font-size:11px;color:#475569;background:#1e293b;padding:4px 10px;border-radius:6px;font-weight:600;cursor:pointer" onclick="removeCsv()">Remover</div>
-  </div>
-
   <!-- Load button -->
   <button class="btn-load" id="btn-load" onclick="handleLoad()" disabled>Selecione o arquivo Excel para continuar</button>
   <div id="msg-area"></div>
@@ -267,7 +251,7 @@ let state = {
   cardSort: {atrasado:'dias', hoje:'valor', semana:'valor'},
 };
 
-let xlsFile = null, csvFile = null;
+let xlsFile = null;
 
 // ══════════════════════════════════════════ UTILS ══
 function fmt(v) { return Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -342,26 +326,6 @@ function removeXls() {
     <div style="display:inline-block;background:#f59e0b;color:#0f172a;padding:9px 26px;border-radius:9px;font-size:13px;font-weight:700">Selecionar Excel</div>`;
   updateLoadBtn();
 }
-function onCsvChange(e) {
-  const f = e.target.files[0]; if (!f) return;
-  csvFile = f;
-  document.getElementById("csv-icon").textContent = "✅";
-  document.getElementById("csv-name").textContent = f.name;
-  document.getElementById("csv-name").style.color = "#22c55e";
-  document.getElementById("csv-sub").textContent = "Usuário será vinculado por nº de pedido";
-  document.getElementById("csv-remove").style.display = "block";
-  document.getElementById("drop-csv").classList.add("has-file");
-}
-function removeCsv() {
-  csvFile = null;
-  document.getElementById("inp-csv").value="";
-  document.getElementById("csv-icon").textContent = "👤";
-  document.getElementById("csv-name").textContent = "Usuários · CSV ou XLSX de Negociação (opcional)";
-  document.getElementById("csv-name").style.color = "#475569";
-  document.getElementById("csv-sub").textContent = "Arraste o arquivo de Negociação (.xlsx) ou CSV";
-  document.getElementById("csv-remove").style.display = "none";
-  document.getElementById("drop-csv").classList.remove("has-file");
-}
 function updateLoadBtn() {
   const btn = document.getElementById("btn-load");
   if (xlsFile) { btn.classList.add("ready"); btn.disabled=false; btn.textContent="🚀  Carregar Relatório"; }
@@ -418,54 +382,8 @@ function setMsg(html, cls) {
 // Drag & drop
 
 
-// ══════════════════════════════════════════ PARSE CSV/XLSX USERS ══
-async function parseUsers(file) {
-  const map = {};
-  const ext = file.name.split(".").pop().toLowerCase();
-  if (ext==="xlsx"||ext==="xls") {
-    const ab = await file.arrayBuffer();
-    const wb = XLSX.read(ab,{type:"array"});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(ws,{header:1,raw:false});
-    if (rows.length<2) return map;
-    const hdrs = rows[0].map(h=>String(h||"").trim().toUpperCase());
-    const erpCol=hdrs.findIndex(h=>h==="ID_ERP");
-    const respCol=hdrs.findIndex(h=>h==="RESPONSAVEL_NEGOCIACAO");
-    const criadaCol=hdrs.findIndex(h=>h==="CRIADA_POR");
-    if (erpCol===-1) return map;
-    for (let i=1;i<rows.length;i++) {
-      const row=rows[i];
-      const erp=String(row[erpCol]||"");
-      const m=erp.match(/PED0+(\d{5})1/);
-      if(!m) continue;
-      const ped=m[1].padStart(6,"0");
-      const resp=String(row[respCol]||"").trim();
-      const criada=String(row[criadaCol]||"").trim();
-      const user=(resp&&resp!=="None")?resp.replace(/^\d+-/,"").trim():criada;
-      if(user&&user!=="Crm Simples"&&user!=="None"&&user!=="") map[ped]=user;
-    }
-  } else {
-    const text = await file.text();
-    const lines = text.split(/\r?\n/);;
-    const sep = lines[0].includes(";") ? ";" : ",";
-    const hdrs = lines[0].split(sep).map(h=>h.trim().toLowerCase());
-    const pedCol=hdrs.findIndex(h=>h.includes("numero")||h.includes("pedido"));
-    const userCol=hdrs.findIndex(h=>h.includes("usuario")||h.includes("user"));
-    if(pedCol!==-1&&userCol!==-1) {
-      for(let i=1;i<lines.length;i++){
-        const p=lines[i].split(sep);
-        if(p.length<=Math.max(pedCol,userCol)) continue;
-        const ped=p[pedCol].trim().replace(/^0+/,"").padStart(6,"0");
-        const user=p[userCol].trim();
-        if(ped&&user&&!/^\d+$/.test(user)) map[ped]=user;
-      }
-    }
-  }
-  return map;
-}
-
 // ══════════════════════════════════════════ PARSE METHOS XLS ══
-async function parseMethos(file, userMap) {
+async function parseMethos(file) {
   const ab = await file.arrayBuffer();
   const wb = XLSX.read(ab,{type:"array",cellDates:true,dateNF:"dd/mm/yyyy"});
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -481,9 +399,10 @@ async function parseMethos(file, userMap) {
   const cPes=col("Pessoa"), cRep=col("Representante");
   const cVlr=col("Vlr Mercadoria")!==-1?col("Vlr Mercadoria"):col("Vlr Mercad");
   const cEnt=col("Dt. Ent")!==-1?col("Dt. Ent"):col("Dt Ent");
+  const cUsu=col("Usuário")!==-1?col("Usuário"):col("Usuario")!==-1?col("Usuario"):0;
   if(cPed===-1||cEnt===-1) throw new Error("Colunas não encontradas: "+hdrs.filter(Boolean).join(", "));
 
-  const parsed=[]; let lastPed="",lastCli="",lastRep="",lastEmi="",lastVlr=0;
+  const parsed=[]; let lastPed="",lastCli="",lastRep="",lastEmi="",lastVlr=0,lastUsu="";
   for(let r=headerIdx+1;r<rows.length;r++){
     const row=rows[r];
     if(!row||row.every(c=>!c&&c!==0)) continue;
@@ -501,6 +420,7 @@ async function parseMethos(file, userMap) {
       lastPed=pedCell.replace(/^0+/,"").padStart(6,"0");
       lastCli=pesCell.replace(/^\d+\s*-\s*/,"").replace(/\.[A-Z]\.[A-Z](\.[A-Z])*.*$/,"").replace(/\s+(LTDA\.?|EIRELI|EPP)\s*$/i,"").trim();
       lastRep=repCell.replace(/^\d+\s*-\s*/,"").replace(/;\d+\s*$/,"").trim()||"INCUBAÇÃO";
+      lastUsu=String(row[cUsu]||"").trim();
       if(emiRaw instanceof Date){const dd=String(emiRaw.getDate()).padStart(2,"0"),mm=String(emiRaw.getMonth()+1).padStart(2,"0");lastEmi=dd+"/"+mm+"/"+emiRaw.getFullYear();}
       else if(typeof emiRaw==="number"&&emiRaw>1000){const d=new Date(Math.round((emiRaw-25569)*86400*1000));lastEmi=String(d.getUTCDate()).padStart(2,"0")+"/"+String(d.getUTCMonth()+1).padStart(2,"0")+"/"+d.getUTCFullYear();}
       else lastEmi=String(emiRaw||"").trim();
@@ -510,7 +430,7 @@ async function parseMethos(file, userMap) {
     if(entCell&&/\d{2}\/\d{2}\/\d{2,4}/.test(entCell)&&lastPed){
       let dt=entCell; const p=dt.split("/"); if(p.length===3&&p[2].length===2) dt=p[0]+"/"+p[1]+"/20"+p[2];
       const v=parseFloat(vlrCell.replace(/\./g,"").replace(",","."))||lastVlr;
-      const usuario=userMap[lastPed.replace(/^0+/,"")]||userMap[lastPed]||"";
+      const usuario=lastUsu;
       if(v>0&&!parsed.find(o=>o.pedido===lastPed&&o.dtEntrega===dt))
         parsed.push({pedido:lastPed,cliente:lastCli,rep:lastRep,dtEmissao:lastEmi,dtEntrega:dt,valor:v,usuario});
     }
@@ -528,10 +448,8 @@ async function handleLoad() {
   btn.disabled=true; btn.textContent="Carregando...";
   setMsg(`<div class="spinner">⚙️</div> <span style="margin-left:8px">Processando...</span><div class="progress-bar"><div class="progress-bar-inner"></div></div>`,"msg-ok");
   try {
-    let userMap={};
-    if(csvFile){ setMsg("Lendo arquivo de usuários...","msg-ok"); userMap=await parseUsers(csvFile); }
     setMsg("Lendo planilha METHOS...","msg-ok");
-    const orders = await parseMethos(xlsFile, userMap);
+    const orders = await parseMethos(xlsFile);
     const comUsuario=orders.filter(o=>o.usuario).length;
     setMsg(`✅ ${orders.length} pedidos extraídos${comUsuario>0?" · "+comUsuario+" com usuário":""}`,"msg-ok");
     const now=new Date(); const todayStr=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0");
